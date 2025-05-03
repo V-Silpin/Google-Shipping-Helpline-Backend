@@ -1,0 +1,140 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Multimodal Route Planner</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+  <style>
+    #map { height: 500px; margin-top: 10px; }
+    body { font-family: Arial, sans-serif; }
+  </style>
+</head>
+<body>
+
+<h2>Multimodal Route Planner</h2>
+<label for="source">Source:</label>
+<input type="text" id="source" placeholder="Enter source place" />
+<label for="destination">Destination:</label>
+<input type="text" id="destination" placeholder="Enter destination place" />
+<button onclick="getCoordinates()">Show Routes</button>
+
+<div id="map"></div>
+<div>
+  <strong>Route Legend:</strong><br>
+  <span style="color: blue;">▭ Air</span> &nbsp;
+  <span style="color: red;">■ Rail</span> &nbsp;
+  <span style="color: green;">■ Road</span> &nbsp;
+  <span style="color: purple;">▭ Sea</span> &nbsp;
+  <span style="color: orange;">▭ Hybrid</span>
+</div>
+
+<script>
+  let map = L.map('map').setView([20.5937, 78.9629], 5); // Center on India
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  let sourceCoords, destinationCoords;
+
+  const apiKey = '2ee09e2fe1f947dc979ec98591255882';
+  async function geocodePlace(place) {
+    const apiKey = '2ee09e2fe1f947dc979ec98591255882'; // Replace with your valid key
+    const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(place)}&key=${apiKey}`;
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.results.length > 0) {
+            const location = data.results[0].geometry;
+            return [location.lat, location.lng];
+        } else {
+            alert(`No results found for ${place}`);
+            return null;
+        }
+    } catch (error) {
+        console.error('Error in geocoding:', error);
+        alert('Geocoding failed. Check API key and network.');
+        return null;
+    }
+}
+
+  function getCoordinates() {
+    const source = document.getElementById('source').value;
+    const destination = document.getElementById('destination').value;
+
+    Promise.all([
+      fetch(`https://api.opencagedata.com/geocode/v1/json?q=${source}&key=${apiKey}`)
+        .then(res => res.json()),
+      fetch(`https://api.opencagedata.com/geocode/v1/json?q=${destination}&key=${apiKey}`)
+        .then(res => res.json())
+    ]).then(data => {
+      const sourceResult = data[0].results[0].geometry;
+      const destResult = data[1].results[0].geometry;
+
+      sourceCoords = [sourceResult.lat, sourceResult.lng];
+      destinationCoords = [destResult.lat, destResult.lng];
+
+      map.setView(sourceCoords, 5);
+      L.marker(sourceCoords).addTo(map).bindPopup("Source").openPopup();
+      L.marker(destinationCoords).addTo(map).bindPopup("Destination");
+
+      showAllRoutes();
+      showOptimizedRoute();
+    }).catch(error => alert("Error in geocoding: " + error));
+  }
+
+  function drawRoute(type, color, dashArray) {
+    L.polyline([sourceCoords, destinationCoords], {
+      color: color,
+      weight: 4,
+      dashArray: dashArray,
+      opacity: 0.7
+    }).addTo(map).bindPopup(`${type} route`);
+  }
+
+  function showAllRoutes() {
+    drawRoute("Air", "blue", "10, 10");
+    drawRoute("Rail", "red", null);
+    drawRoute("Road", "green", null);
+    drawRoute("Sea", "purple", "5, 10");
+
+    // Hybrid (road to midpoint, air to destination)
+    let mid = [
+      (sourceCoords[0] + destinationCoords[0]) / 2,
+      (sourceCoords[1] + destinationCoords[1]) / 2
+    ];
+    L.polyline([sourceCoords, mid], { color: "orange", dashArray: "5,5", weight: 4 }).addTo(map).bindPopup("Hybrid Route Part 1");
+    L.polyline([mid, destinationCoords], { color: "blue", dashArray: "10,10", weight: 4 }).addTo(map).bindPopup("Hybrid Route Part 2");
+  }
+
+  function showOptimizedRoute() {
+    const routes = [
+      { type: "Air", cost: 200, time: 2, color: "blue", dashArray: "10,10" },
+      { type: "Rail", cost: 100, time: 8, color: "red", dashArray: null },
+      { type: "Road", cost: 50, time: 10, color: "green", dashArray: null },
+      { type: "Sea", cost: 80, time: 12, color: "purple", dashArray: "5,10" },
+      { type: "Hybrid", cost: 120, time: 6, color: "orange", dashArray: "5,5" }
+    ];
+
+    // Optimize for cost and time using weighted score (can be customized)
+    const best = routes.reduce((a, b) => ((a.cost + a.time) < (b.cost + b.time)) ? a : b);
+
+    L.polyline([sourceCoords, destinationCoords], {
+      color: best.color,
+      dashArray: best.dashArray,
+      weight: 6,
+      opacity: 1
+    }).addTo(map).bindPopup(`Optimized Route (${best.type}) - Cost: ${best.cost}, Time: ${best.time}h`).openPopup();
+  }
+</script>
+
+</body>
+</html>
